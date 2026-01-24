@@ -1,0 +1,58 @@
+//==================================================================
+// Breakout modele template
+// Template used to test different breakout variants.
+//==================================================================
+
+// Trade delays in backtester settings are to be set to 0 for Long and Short. Sell and Cover are not used.
+
+// Define POI = O each day, starting at 14:30 UTC (db parameters)
+
+// We don't need Sell and Cover variables so we initialize them with the 0 value;
+Sell = Cover = 0;
+
+// Define space
+atrPeriod = Param("atrPeriod", 60, 60, 360, 60);
+atrCoefLong = Param("atrCoefLong", 5, 1, 5, 0.5);
+atrCoefShort = Optimize("atrCoefShort", 5, 1, 5, 0.5);
+space = TimeFrameGetPrice("O", inDaily);
+spaceBuy = space + ATR(atrPeriod) * atrCoefLong;
+spaceShort = space - ATR(atrPeriod) * atrCoefShort;
+
+// Filters
+
+// Trading session time filter
+// Calculate the trading session hour
+timeStart = 143000;
+hoursNumber = Param("hoursNumber", 1, 0.5, 7.5, 0.5);
+timeEnd = timeStart + hoursNumber * 10000;
+barTime = timeNum();
+breakoutFilters = barTime >= timeStart AND barTime < timeEnd;
+
+// define Buy and Short variables
+Buy = C >= spaceBuy and breakoutFilters;
+Short = C <= spaceShort and breakoutFilters;
+
+// Define exit
+takeProfitPercent = Param("takeProfitPercent", 1.5, 0.5, 30, 0.5);
+ApplyStop(stopTypeProfit, stopModepercent, takeProfitPercent);
+
+// Define stoploss
+stopLossPercent = Param("stopLossPercent", 2, 0.5, 5, 0.5);
+ApplyStop(stopTypeLoss, StopModePercent, stopLossPercent);
+
+// Define position size
+SetPositionSize(10, spsPercentOfEquity);
+
+// Exploration columns
+filter = 1;
+
+AddColumn(O, "O");
+AddColumn(H, "H");
+AddColumn(L, "L");
+AddColumn(C, "C");
+AddColumn(buy, "Buy");
+Addcolumn(short, "Short");
+AddColumn(space, "Space");
+AddColumn(breakoutFilters, "breakoutFilters");
+addColumn(barTime, "barTime");
+AddColumn(timeEnd, "timeEnd");
