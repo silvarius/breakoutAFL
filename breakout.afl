@@ -11,9 +11,9 @@
 Sell = Cover = 0;
 
 // Define space
-atrPeriod = Param("atrPeriod", 60, 60, 360, 60);
-atrCoefLong = Param("atrCoefLong", 5, 1, 5, 0.5);
-atrCoefShort = Optimize("atrCoefShort", 5, 1, 5, 0.5);
+atrPeriod = Param("atrPeriod", 480, 60, 1200, 60);
+atrCoefLong = Param("atrCoefLong", 5, 1, 10, 0.5);
+atrCoefShort = Param("atrCoefShort", 5, 1, 10, 0.5);
 space = TimeFrameGetPrice("O", inDaily);
 spaceBuy = space + ATR(atrPeriod) * atrCoefLong;
 spaceShort = space - ATR(atrPeriod) * atrCoefShort;
@@ -23,25 +23,59 @@ spaceShort = space - ATR(atrPeriod) * atrCoefShort;
 // Trading session time filter
 // Calculate the trading session hour
 timeStart = 143000;
-hoursNumber = Param("hoursNumber", 1, 0.5, 7.5, 0.5);
+hoursNumber = param("hoursNumber", 1, 0.5, 7.5, 0.5);
 timeEnd = timeStart + hoursNumber * 10000;
 barTime = timeNum();
-breakoutFilters = barTime >= timeStart AND barTime < timeEnd;
+breakoutFiltersLong = breakoutFiltersShort = barTime >= timeStart AND barTime < timeEnd;
+
+// Previous candle color filter
+useCandleFilter = ParamToggle("useCandleFilter", "No, Yes");
+If (useCandleFilter)
+{
+    previousDayOpen = ref(TimeFrameGetPrice("O", InDaily), -1);
+    previousDayClose = ref(TimeFrameGetPrice("C", InDaily), -1);
+    colorCandle = iif(previousDayClose >= previousDayOpen, 1, -1);
+    breakoutFiltersLong = breakoutFiltersLong  AND iif(colorCandle == 1, True, False);
+    breakoutfiltersShort = breakoutFiltersShort AND iif(colorCandle == -1, True, False);
+}
+
+// Roc filter
+useRocFilter = ParamToggle("useRocFilter", "No, Yes");
+rocPeriod = Param("rocPeriod", 8, 1, 30, 1);
+rocThreshold = Param("rocThreshod", 1, 1, 10, 1);
+If (useRocFilter)
+{
+    TimeFrameSet(inDaily);
+        rocIndicator = roc(C, rocPeriod);
+    TimeFrameRestore();
+    rocIndicator = TimeFrameExpand(rocIndicator, inDaily);
+    breakoutFiltersLong = breakoutFiltersLong AND rocIndicator > rocThreshold;
+    breakoutFiltersShort = breakoutfiltersShort AND rocIndicator < -rocThreshold;
+
+}
 
 // define Buy and Short variables
-Buy = C >= spaceBuy and breakoutFilters;
-Short = C <= spaceShort and breakoutFilters;
+Buy = C >= spaceBuy and breakoutFiltersLong;
+Short = C <= spaceShort and breakoutFiltersShort;
 
 // Define exit
-takeProfitPercent = Param("takeProfitPercent", 1.5, 0.5, 30, 0.5);
-ApplyStop(stopTypeProfit, stopModepercent, takeProfitPercent);
+takeProfitPercent = Param("takeProfitPercent", 30, 0.5, 50, 0.5);
+trailingPercent = Param("trailingPercent", 5, 1, 20, 0.5);
+ApplyStop(stopTypeProfit, stopModepercent, takeProfitPercent, 1);
+ApplyStop(stopTypeTrailing, stopModePercent, trailingPercent, 1);
 
 // Define stoploss
-stopLossPercent = Param("stopLossPercent", 2, 0.5, 5, 0.5);
-ApplyStop(stopTypeLoss, StopModePercent, stopLossPercent);
+stopLossPercent = Param("stopLossPercent", 0.5, 0.1, 5, 0.1);
+ApplyStop(stopTypeLoss, stopModepercent, stopLossPercent, 1);
+
+// If no stop nor take profit were triggered, we exit at 21:00 UTC (Wall street trading session end)
+Sell = Cover = timeNum() == 210000;
 
 // Define position size
 SetPositionSize(10, spsPercentOfEquity);
+
+// We set trade delay
+SetTradeDelays(1, 1, 1, 1);
 
 // Exploration columns
 filter = 1;
@@ -53,6 +87,10 @@ AddColumn(C, "C");
 AddColumn(buy, "Buy");
 Addcolumn(short, "Short");
 AddColumn(space, "Space");
-AddColumn(breakoutFilters, "breakoutFilters");
+AddColumn(breakoutFiltersLong, "breakoutFilters");
+AddColumn(breakoutFiltersShort, "breakoutFiltersShort");
 addColumn(barTime, "barTime");
 AddColumn(timeEnd, "timeEnd");
+AddColumn(ATR(atrPeriod), "ATR");
+addColumn(spaceBuy, "spaceBuy");
+
