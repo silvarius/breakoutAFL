@@ -1,0 +1,146 @@
+//==================================================================
+// Breakout  2
+//==================================================================
+
+// Trade delays in backtester settings are to be set to 0 for Long and Short with exit at Close.
+
+// We initialize the Sell and Cover variables with the 0 value in case we don't need them afterwards (Exits with stop loss/profit);
+Sell = Cover = 0;
+
+// Global parameters
+useTrakeProfit = ParamToggle("Use Take Profit", "No|Yes", 2);
+useStopLoss = ParamToggle("Use Stop Loss", "No|Yes", 1);
+useSellCover = ParamToggle("Use Sell Cover", "No|Yes", 2);
+
+// -------------------------------------------------------------------------
+// Defining the Point Of Initiation
+// -------------------------------------------------------------------------
+
+poiLong = O;
+poiShort = poiLong;
+
+// -------------------------------------------------------------------------
+// Defining space
+// --------------------------------------------------------------------------
+
+// We define the space high timeframe
+volatilityHtf = ParamList("volatilityHtf", "mn|5mn|15mn|30mn|1h|4h|1d|1w|1m|1y", 7); // We choose the high timeframe
+spacePeriodHtf = Param("spacePeriod", 20, 1, 60, 1);  // We choose the high timeframe space period (the number of high timeframe bars)
+
+//  We convert the chosen space high timeframe unit in minutes
+if (volatilityHtf == "mn") { volatilityHtf = 1;}
+else if (volatilityHtf == "5mn") { volatilityHtf = 5;}
+else if (volatilityHtf == "15mn") {volatilityHtf = 15;}
+else if (volatilityHtf == "30mn") {volatilityHtf = 30;}
+else if (volatilityHtf =="1h") {volatilityHtf = 60;}
+else if (volatilityHtf == "4h") {volatilityHtf = 240;}
+else if (volatilityHtf == "1d") {volatilityHtf = 1440;}
+else if (volatilityHtf == "1w") {volatilityHtf = 10080;}
+else if (volatilityHtf == "1m") {volatilityHtf = 43200;}
+else if (volatilityHtf == "1y" ){volatilityHtf = 525600;}
+
+// we calculate the number of bars taken into account in the space calculation
+tf = Interval(); // The present timeframe in minutes
+barQty = volatilityHtf  * spacePeriodHtf / tf; // The number of bars taken into account for space calculation
+
+// We choose the space calculation type
+spaceType = ParamList("Space type", "ATR|OpenClose");
+
+// We calculate the space
+if (spaceType == "ATR")
+{
+	baseSpace = ATR(barQty);
+}
+else if (spacetype == "OpenClose")
+{
+	co = abs(C - O);
+	baseSpace = MA(co, barQty);
+}
+
+//  We define the space coef parameters
+spaceCoefLong = Param("spaceCoefLong", 1.5, 0.5, 5, 0.5);
+spaceCoefShort = Param("spaceCoefShort", 1.5 , 0.5 , 5, 0.5);
+
+//  We calculate the space for Long and Short trades
+spaceLong = baseSpace* spaceCoefLong;
+spaceShort = baseSpace * spaceCoefShort;
+
+// -------------------------------------------------------------------------------
+// Define Filters
+// -------------------------------------------------------------------------------
+
+// Trading session time filter
+hoursNumber = Param("hoursNumber", 1, 0.5, 24, 0.5);  // The number of hours in the trading session
+timeStart = 000000; // hhmmss
+timeEnd = timeStart + hoursNumber * 10000;
+barTime = timeNum(); // The open time of the bar
+breakoutFilters = barTime >= timeStart AND barTime <= timeEnd;
+
+// -----------------------------------------------------------------------------------
+// define Buy and Short variables
+// -----------------------------------------------------------------------------------
+
+Buy = C >= poiLong + spaceLong and breakoutFilters;
+Short = C <= poiShort - spaceShort and breakoutFilters;
+
+// -------------------------------------------------------------------------------------
+// Define exit
+//  -------------------------------------------------------------------------------------
+
+// Sell and Cover variable
+if (useSellCover)
+{
+	Sell = barTime == timeEnd OR C <= O - spaceShort;
+	Cover = barTime == timeEnd OR C >= O + spaceLong;
+}
+
+// Take profit
+if (useTrakeProfit)
+{
+    takeProfitCoef = Param("takeProfitCoef", 1.5, 0.5, 15, 0.5);
+    takeProfit = baseSpace * takeProfitCoef;
+    ApplyStop(stopTypeProfit, stopModePoint, takeProfit);
+}
+
+// Stop loss
+if (useStopLoss)
+{
+    stopLossCoef = Param("stopLossCoef", 1.5, 0.5, 5, 0.5);
+    stopLoss = baseSpace * stopLossCoef;    
+    ApplyStop(stopTypeLoss, StopModePoint, stopLoss);
+}
+
+// -------------------------------------------------------------------------------
+// Define position size
+// -------------------------------------------------------------------------------
+
+SetPositionSize(100, spsPercentOfEquity);
+
+// -------------------------------------------------------------------------------
+// Exploration columns
+// -------------------------------------------------------------------------------
+
+filter = 1; // Buy OR Short OR Sell OR COVER;
+
+juATR= ATR(barQty);
+
+AddColumn(O, "O");
+AddColumn(H, "H");
+AddColumn(L, "L");
+AddColumn(C, "C");
+AddColumn(buy, "Buy");
+Addcolumn(short, "Short");
+AddColumn(Sell, "Sell");
+AddColumn(Cover, "Cover");
+AddColumn(juATR, "ATR");
+AddColumn(baseSpace, "baseSpace");
+AddColumn(volatilityHtf, "volatilityHtf");
+AddColumn(spaceLong, "spaceLong");
+AddColumn(spaceShort, "spaceShort");
+AddColumn(breakoutFilters, "breakoutFilters");
+addColumn(barTime, "barTime");
+AddColumn(timeStart, "timeStart");
+AddColumn(timeEnd, "timeEnd");
+AddColumn(ATR(atrPeriod), "ATR");
+addColumn(spaceBuy, "spaceBuy");
+
