@@ -141,3 +141,6 @@ AddColumn(breakoutFilters, "breakoutFilters");
 addColumn(barTime, "barTime");
 AddColumn(timeStart, "timeStart");
 AddColumn(timeEnd, "timeEnd");
+AddColumn(ATR(atrPeriod), "ATR");
+addColumn(spaceBuy, "spaceBuy");
+
