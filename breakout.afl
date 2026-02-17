@@ -10,7 +10,8 @@ Sell = Cover = 0;
 // Global parameters
 useTrakeProfit = ParamToggle("Use Take Profit", "No|Yes", 2);
 useStopLoss = ParamToggle("Use Stop Loss", "No|Yes", 1);
-useSellCover = ParamToggle("Use Sell Cover", "No|Yes", 2);
+useSpaceExit = ParamToggle("Use spaceExit", "No|Yes", 2);
+useTimeExit = ParamToggle("Use Time Exit", "No|Yes", 2);
 
 // -------------------------------------------------------------------------
 // Defining the Point Of Initiation
@@ -66,32 +67,48 @@ spaceLong = baseSpace* spaceCoefLong;
 spaceShort = baseSpace * spaceCoefShort;
 
 // -------------------------------------------------------------------------------
-// Define Filters
+// Defining Filters
 // -------------------------------------------------------------------------------
 
 // Trading session time filter
-hoursNumber = Param("hoursNumber", 1, 0.5, 24, 0.5);  // The number of hours in the trading session
-timeStart = 000000; // hhmmss
-timeEnd = timeStart + hoursNumber * 10000;
+timeStart = 143000; // hhmmss
+timeEnd = 213000;
 barTime = timeNum(); // The open time of the bar
-breakoutFilters = barTime >= timeStart AND barTime <= timeEnd;
+timeFilter = barTime >= timeStart AND barTime < timeEnd;
+
+//  Volatility filter calculated from bollinger bands
+volatilityFilterLowPeriod = Param("Volatility filter low period", 20, 5, 60, 5);
+volatilityFilterHighPeriod = Param("Volatility filter high period", 2000, 1000, 10000, 1000); 
+volatilityFilterCoef = Param("VolatilityFilterCoef", 0.5, 0.1, 1, 0.1);
+bBandLowTf = BBandTop(C, volatilityFilterLowPeriod) - BBandBot(C, volatilityFilterLowPeriod);
+bBandHighTf = BBandTop(C, volatilityFilterHighPeriod) - BBandBot(C, volatilityFilterHighPeriod);
+volatilityFilter = bBandLowTf <= volatilityFilterCoef * bBandHighTf;
+
+filters = timeFilter AND volatilityFilter;
 
 // -----------------------------------------------------------------------------------
-// define Buy and Short variables
+// defining Buy and Short variables
 // -----------------------------------------------------------------------------------
 
-Buy = C >= poiLong + spaceLong and breakoutFilters;
-Short = C <= poiShort - spaceShort and breakoutFilters;
+Buy = C >= poiLong + spaceLong and filters;
+Short = C <= poiShort - spaceShort and filters;
 
 // -------------------------------------------------------------------------------------
-// Define exit
+// Defining exits
 //  -------------------------------------------------------------------------------------
 
-// Sell and Cover variable
-if (useSellCover)
+// Space exit: We exit if an opposite breakout signal is detected
+if (useSpaceExit)
 {
-	Sell = barTime == timeEnd OR C <= O - spaceShort;
-	Cover = barTime == timeEnd OR C >= O + spaceLong;
+	Sell  =  C <= O - spaceShort;
+	Cover = C >= O + spaceLong;
+}
+
+// Time exit: We exit at the end of the trade session
+if (useTimeExit)
+{
+	Sell = Sell OR barTime >= timeEnd;
+	Cover = Cover OR barTime >= timeEnd;
 }
 
 // Take profit
@@ -105,13 +122,13 @@ if (useTrakeProfit)
 // Stop loss
 if (useStopLoss)
 {
-    stopLossCoef = Param("stopLossCoef", 1.5, 0.5, 5, 0.5);
+    stopLossCoef = Param("stopLossCoef", 3, 0.5, 5, 0.5);
     stopLoss = baseSpace * stopLossCoef;    
     ApplyStop(stopTypeLoss, StopModePoint, stopLoss);
 }
 
 // -------------------------------------------------------------------------------
-// Define position size
+// Defining position size
 // -------------------------------------------------------------------------------
 
 SetPositionSize(100, spsPercentOfEquity);
@@ -137,10 +154,7 @@ AddColumn(baseSpace, "baseSpace");
 AddColumn(volatilityHtf, "volatilityHtf");
 AddColumn(spaceLong, "spaceLong");
 AddColumn(spaceShort, "spaceShort");
-AddColumn(breakoutFilters, "breakoutFilters");
+AddColumn(filters, "filters");
 addColumn(barTime, "barTime");
 AddColumn(timeStart, "timeStart");
 AddColumn(timeEnd, "timeEnd");
-AddColumn(ATR(atrPeriod), "ATR");
-addColumn(spaceBuy, "spaceBuy");
-
