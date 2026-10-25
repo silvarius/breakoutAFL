@@ -1,0 +1,209 @@
+//==================================================================
+// Breakout  3
+//==================================================================
+
+// Trade delays in backtester settings are to be set to 0 for Long and Short with exit at Close.
+
+// We initialize the Sell and Cover variables with the 0 value in case we don't need them afterwards (Exits with stop loss/profit);
+Sell = Cover = 0;
+
+// Global parameters
+useTrakeProfit = ParamToggle("Use Take Profit", "No|Yes", 2);
+useStopLoss = ParamToggle("Use Stop Loss", "No|Yes", 1);
+useSpaceExit = ParamToggle("Use spaceExit", "No|Yes", 2);
+useTimeExit = ParamToggle("Use Time Exit", "No|Yes", 2);
+
+// -------------------------------------------------------------------------
+// Defining the highest high (hh) and lowest low (ll) of the trading session initial balance (IB)
+// -------------------------------------------------------------------------
+
+// We define the number of  candels in the IB
+periodicity = Interval() / 60;
+ibStart = 143000;
+ibEnd = 153000;
+ibMnNb = (int(ibEnd / 10000) - int(ibStart / 10000)) * 60 + (ibEnd % 10000 / 100 - ibStart % 10000 / 100);
+ibBarNb = ibMnNb / periodicity;
+
+// We define the bar where the IB hh and ll are calculated
+ ibNextBar = TimeNum() == ibEnd;
+ ibDefineBar = Ref(ibNextBar, 1);
+
+// We calculate the IB hh and ll
+ibHh = ibLl = 0;
+ibHh = ValueWhen(ibDefineBar, HHV(H, 60 / periodicity));
+ibHh = IIf(ibDefineBar, ibHh, Ref(ibHh, -1));
+ibLl = ValueWhen(ibDefineBar, LLV(L, 60/periodicity));
+ibLl = IIf(ibDefineBar, ibLl, Ref(ibLl, -1));
+
+// -------------------------------------------------------------------------
+// Defining the Point Of Initiation
+// -------------------------------------------------------------------------
+
+poiLong = ibHh;
+poiShort = ibLl;
+
+// -------------------------------------------------------------------------
+// Defining space
+// --------------------------------------------------------------------------
+
+// We define the space high timeframe
+volatilityHtf = ParamList("volatilityHtf", "mn|5mn|15mn|30mn|1h|4h|1d|1w|1m|1y", 7); // We choose the high timeframe
+spacePeriodHtf = Param("spacePeriod", 20, 1, 60, 1);  // We choose the high timeframe space period (the number of high timeframe bars)
+
+//  We convert the chosen space high timeframe unit in minutes
+if (volatilityHtf == "mn") { volatilityHtf = 1;}
+else if (volatilityHtf == "5mn") { volatilityHtf = 5;}
+else if (volatilityHtf == "15mn") {volatilityHtf = 15;}
+else if (volatilityHtf == "30mn") {volatilityHtf = 30;}
+else if (volatilityHtf =="1h") {volatilityHtf = 60;}
+else if (volatilityHtf == "4h") {volatilityHtf = 240;}
+else if (volatilityHtf == "1d") {volatilityHtf = 1440;}
+else if (volatilityHtf == "1w") {volatilityHtf = 10080;}
+else if (volatilityHtf == "1m") {volatilityHtf = 43200;}
+else if (volatilityHtf == "1y" ){volatilityHtf = 525600;}
+
+// we calculate the number of bars taken into account in the space calculation
+tf = Interval(); // The present timeframe in minutes
+barQty = volatilityHtf  * spacePeriodHtf / tf; // The number of bars taken into account for space calculation
+
+// We choose the space calculation type
+spaceType = ParamList("Space type", "ATR|OpenClose");
+
+// We calculate the space
+if (spaceType == "ATR")
+{
+	baseSpace = ATR(barQty);
+}
+else if (spacetype == "OpenClose")
+{
+	co = abs(C - O);
+	baseSpace = MA(co, barQty);
+}
+
+//  We define the space coef parameters
+spaceCoefLong = Param("spaceCoefLong", 1.5, 0, 5, 0.5);
+spaceCoefShort = Param("spaceCoefShort", 1.5 , 0 , 5, 0.5);
+
+//  We calculate the space for Long and Short trades
+spaceLong = baseSpace* spaceCoefLong;
+spaceShort = baseSpace * spaceCoefShort;
+
+// -------------------------------------------------------------------------------
+// Defining Filters
+// -------------------------------------------------------------------------------
+barTime = timeNum(); // The open time of the bar
+
+// Entry time filter
+useEntryTimeFilter = ParamToggle("useEntryTimeFilter", "No|Yes");
+
+// variable initializations
+entryTimeFilter = 1;
+entryTimeStart = 0;
+entryTimeEnd = 0;
+entryTimeFilter = 0;
+bBandLowTf = 0;
+bBandHighTf = 0;
+
+if (useEntryTimeFilter)
+{
+	entryTimeStart = 153000;
+	entryTimeEnd = 203000;
+	entryTimeFilter = barTime >= entryTimeStart AND barTime < entryTimeEnd;
+}
+
+//  Volatility filter calculated from bollinger bands
+useVolatilityFilter = ParamToggle("useVolatilityFilter", "No|Yes");
+volatilityFilter = 1;
+
+if (useVolatilityFilter)
+{
+	volatilityFilterLowPeriod = Param("Volatility filter low period", 20, 5, 60, 5);
+	volatilityFilterHighPeriod = Param("Volatility filter high period", 2000, 1000, 10000, 1000); 
+	volatilityFilterCoef = Param("VolatilityFilterCoef", 0.5, 0.1, 1, 0.1);
+	bBandLowTf = BBandTop(C, volatilityFilterLowPeriod) - BBandBot(C, volatilityFilterLowPeriod);
+	bBandHighTf = BBandTop(C, volatilityFilterHighPeriod) - BBandBot(C, volatilityFilterHighPeriod);
+	volatilityFilter = bBandLowTf <= volatilityFilterCoef * bBandHighTf;
+}
+
+// Filters aggregation
+filters = entryTimeFilter AND volatilityFilter;
+
+// -----------------------------------------------------------------------------------
+// defining Buy and Short variables
+// -----------------------------------------------------------------------------------
+
+Buy = C >= poiLong + spaceLong AND filters;
+Short = C <= poiShort - spaceShort AND filters;
+
+// -------------------------------------------------------------------------------------
+// Defining exits
+//  -------------------------------------------------------------------------------------
+
+// Space exit: We exit if an opposite breakout signal is detected
+if (useSpaceExit)
+{
+	Sell  =  C <= O - spaceShort;
+	Cover = C >= O + spaceLong;
+}
+
+// Time exit:
+exitMaxTime = 233000;
+
+if (useTimeExit)
+{
+	Sell = Sell OR barTime >= exitMaxTime;
+	Cover = Cover OR barTime >= exitMaxTime;
+}
+
+// Take profit
+if (useTrakeProfit)
+{
+    takeProfitCoef = Param("takeProfitCoef", 1.5, 0.5, 15, 0.5);
+    takeProfit = baseSpace * takeProfitCoef;
+    ApplyStop(stopTypeProfit, stopModePoint, takeProfit);
+}
+
+// Stop loss
+if (useStopLoss)
+{
+    stopLossCoef = Param("stopLossCoef", 3, 0.5, 5, 0.5);
+    stopLoss = baseSpace * stopLossCoef;    
+    ApplyStop(stopTypeLoss, StopModePoint, stopLoss);
+}
+
+// -------------------------------------------------------------------------------
+// Defining position size
+// -------------------------------------------------------------------------------
+
+SetPositionSize(100, spsPercentOfEquity);
+
+// -------------------------------------------------------------------------------
+// Exploration columns
+// -------------------------------------------------------------------------------
+
+filter = 1; // Buy OR Short OR Sell OR COVER;
+
+juATR= ATR(barQty);
+
+AddColumn(O, "O");
+AddColumn(H, "H");
+AddColumn(L, "L");
+AddColumn(C, "C");
+AddColumn(buy, "Buy");
+Addcolumn(short, "Short");
+AddColumn(Sell, "Sell");
+AddColumn(Cover, "Cover");
+AddColumn(ibDefineBar, "ibDefineBar");
+AddColumn(ibHh, "ibHh");
+AddColumn(ibLl, "ibLl");
+AddColumn(poiLong, "poiLong");
+AddColumn(poiShort, "poiShort");
+AddColumn(juATR, "ATR");
+AddColumn(baseSpace, "baseSpace");
+AddColumn(volatilityHtf, "volatilityHtf");
+AddColumn(spaceLong, "spaceLong");
+AddColumn(spaceShort, "spaceShort");
+AddColumn(filters, "filters");
+addColumn(barTime, "barTime");
+AddColumn(entryTimeStart, "EntryTimeStart");
+AddColumn(entryTimeEnd, "entryTimeEnd");
